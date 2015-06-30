@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+#Last-modified: 19 Mar 2014 02:39:59 PM
+
+#         Module/Scripts Description
+# 
+# Copyright (c) 2008 Yunfei Wang <yfwang0405@gmail.com>
+# 
+# This code is free software; you can redistribute it and/or modify it
+# under the terms of the BSD License (see the file COPYING included with
+# the distribution).
+# 
+# @status:  experimental
+# @version: 1.1.0
+# @author:  Yunfei Wang
+# @contact: yfwang0405@gmail.com
+
+# ------------------------------------
+# python modules
+# ------------------------------------
+
+import os
+import sys
+import argparse
+from ngslib import IO
+
+# ------------------------------------
+# constants
+# ------------------------------------
+
+VERSION="1.1.0"
+
+# ------------------------------------
+# Misc functions
+# ------------------------------------
+
+def ArgParser(arglst):
+    parser=argparse.ArgumentParser(prog='ngslib',usage=argparse.SUPPRESS,description="Program: %(prog)s {0} (Next-Generation Sequencing tools)".format(VERSION),epilog='dependency pysam numpy')
+
+    options = parser.add_argument_group('Sub commands')
+    options.add_argument('bed', help='Bed format manipulations.')
+    options.add_argument('Bam', help='Bam format manipulations.')
+    options.add_argument('view', help='View items located in given regions.')
+    options.add_argument('sort',help="Sort genomic location items by chrom, then start, finally end.")
+    options.add_argument('index', help='Create index of given files.')
+    options.add_argument('fetch', help='Fetch items located in given regions.')
+    options.add_argument('pileup', help='Pileup items located in given regions.')
+    options.add_argument('convert',help="Convert file format.")
+    
+    #subs=parser.add_subparsers(title="Sub commands",help=None,dest="sub",metavar="",description="fsfsfsfs")
+    #subs = parser.add_subparsers()
+    #subs.add_parser('bed',help='fsfs')
+    
+    # sub commands parsers
+    par_dict = {'-h':parser,'--help':parser}
+    # Bed
+    p = argparse.ArgumentParser(prog='ngslib bed',usage=argparse.SUPPRESS,description="Program: %(prog)s (Bed format manipulations.)"
+    ,epilog='dependency pysam numpy')
+    p.add_argument("-i",help="sfs")
+    par_dict['bed'] = p
+    
+    
+    # Parse arglst
+    nl = len(arglst)
+    if nl == 1:
+        parser.print_help()
+        exit()
+    elif nl == 2:
+        if par_dict.has_key(arglst[1]):
+            par_dict[arglst[1]].print_help()
+            exit()
+        else:
+            sys.exit(parser.print_help())
+    else:
+        if par_dict.has_key(arglst[1]):
+            p = par_dict[arglst[1]]
+            del arglst[1]
+            return p.parse_args(arglst)
+        else:
+            sys.exit(parser.print_help())
+    assert True, "Not reach this line."
+    return
+
+# ------------------------------------
+# Classes
+# ------------------------------------
+
+# ------------------------------------
+# Main
+# ------------------------------------
+
+if __name__=="__main__":
+    args = ArgParser(sys.argv)
+    for item in IO.BioReader(sys.argv[1],ftype='bed'):
+        print item
+
