@@ -40,8 +40,6 @@ procedure. The FDR is the expected proportion of falsely rejected hypotheses.
 
 __docformat__ = 'epytext en'
 
-
-import operator
 import random
 
 
@@ -89,10 +87,10 @@ def bh_qvalues(pv):
     @return: adjusted p-values to be compared directly with the desired FDR
       level
     """
-    if not pv:
+    if len(pv)==0:
         return []
     m = len(pv)
-    args, pv = zip(*sorted(enumerate(pv), None, operator.itemgetter(1)))
+    args, pv = zip(*sorted(enumerate(pv), lambda x,y:cmp(x[1],y[1])))
     if pv[0] < 0 or pv[-1] > 1:
         raise ValueError("p-values must be between 0 and 1")
     qvalues = m * [0]
@@ -155,7 +153,7 @@ def storey_qvalues(pv, l=None):
     if not pv:
         return []
     m = len(pv)
-    args, pv = zip(*sorted(enumerate(pv), None, operator.itemgetter(1)))
+    args, pv = zip(*sorted(enumerate(pv), lambda x,y:cmp(x[1],y[1])))
     if pv[0] < 0 or pv[-1] > 1:
         raise ValueError("p-values must be between 0 and 1")
 

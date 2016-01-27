@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#Last-modified: 24 Jun 2015 09:41:15 AM
+#Last-modified: 16 Nov 2015 11:39:34 AM
 
 #         Module/Scripts Description
 # 
@@ -199,6 +199,33 @@ class Bed3(object):
             tbed.stop  = max(self.stop, B.stop)
             return tbed
         raise TypeError("ERROR: object type is not accepted for adding.")
+    def __sub__(self,B):
+        '''
+        Subtract B from current Bed. Return a list of Beds.
+        '''
+        if B is None:
+            return [copy.deepcopy(self)]
+        if issubclass(type(B),Bed3):
+            tbed = copy.deepcopy(self)
+            if not tbed.isOverlap(B):
+                return [copy.deepcopy(self)]
+            # find overlap
+            sub_start = max(self.start,B.start)
+            sub_stop  = min(self.stop,B.stop)
+            beds = []
+            if sub_start > self.start:
+                tbed = copy.deepcopy(self)
+                tbed.stop = sub_start
+                beds.append(tbed)
+            if sub_stop < self.stop:
+                tbed = copy.deepcopy(self)
+                tbed.start = sub_stop
+                beds.append(tbed)
+            return beds
+        raise TypeError("ERROR: object type is not accepted for subtracting.")
+    def __eq__(self,B):
+        ''' Compare if two Beds have the same chrom, start and stop. '''
+        return self.chrom == B.chrom and self.start == B.start and self.stop == B.stop    
     def __cmp__(self,B):
         ''' Compare two Bed by chrom, start and stop in order. '''
         if isinstance(B,Bed3):
@@ -274,7 +301,7 @@ class Bed3(object):
             if self.stop > chroms[self.chrom]:
                 print >>sys.stderr, "WARNING:: stop {0} is larger than chromosome size for {1}. Set stop to chromosome size.".format(self.stop,self.id)
                 self.stop = chroms[self.chrom]
-    def fetchDB(self,db):
+    def fetchDB(self,db,**kwargs):
         '''
         Fetch elements from DB.
         Parameters:
@@ -284,7 +311,7 @@ class Bed3(object):
             A generator if fetching elements in db.
             An object if fetching sequence in db.
         '''
-        return db.fetch(self.chrom,self.start,self.stop)
+        return db.fetch(self.chrom,self.start,self.stop,**kwargs)
     def pileupDB(self,db,**kwargs):
         '''
         Pileup elements in DB.
@@ -485,7 +512,7 @@ class Bed(Bed3):
             A generator if fetching elements in db.
             An object if fetching sequence in db.
         '''
-        return db.fetch(chrom=self.chrom,start=self.start,stop=self.stop,strand=self.strand)
+        return db.fetch(chrom=self.chrom,start=self.start,stop=self.stop,strand=self.strand,**kwargs)
     def pileupDB(self,db,**kwargs):
         '''
         Pileup elements in DB.
@@ -589,6 +616,10 @@ class GeneBed(Bed):
     def toBed(self):
         '''Transform to Bed format.'''
         return Bed([self.chrom,self.start,self.stop,self.id,self.score,self.strand])
+    def toBed12(self):
+        '''Convert to Bed12 format.'''
+        template = '\t'.join(["{{{0}}}".format(i) for i in range(12)])
+        return template.format(self.chrom,self.start,self.stop,self.id,self.score,self.strand,0,0,0,self.exoncount,','.join([str(stop-start) for start,stop in zip(self.exonstarts,self.exonstops)]),",".join([str(i-self.start) for i in self.exonstarts]))
     def getTSS(self):
         ''' Get TSS as a Bed object. '''
         tbed = self.toBed().getTSS()
@@ -640,6 +671,8 @@ class GeneBed(Bed):
             return utr
     def getUTR5(self):
         '''Get the 5UTR.'''
+        if self.txstart == self.txstop:
+            return None
         if self.strand=='-':
             utr5=self._getUTRs('right')
         else:
@@ -649,6 +682,8 @@ class GeneBed(Bed):
         return utr5
     def getUTR3(self):
         '''Get the 3'UTR.'''
+        if self.txstart == self.txstop:
+            return None
         if self.strand=='-':
             utr3=self._getUTRs('left')
         else:
@@ -656,6 +691,43 @@ class GeneBed(Bed):
         if utr3:
             utr3.id+=':UTR3'
         return utr3
+    def genome_position(self,pos,verbose=False):
+        '''
+        Get zero-based genomic position given zero-based transcript position.
+        ### Check code before use.
+        '''
+        if pos<0:
+            if verbose:
+                print >>sys.stderr, "WARNING: {0}:{1} should not be negative.".format(self.id,pos)
+            return -1
+        l = 0
+        for exon in self.exons():
+            el = len(exon)
+            if l<pos<l+el:
+                return exon.start + pos - l if exon.strand == "+" else exon.stop - pos + l
+            l += el
+        if verbose:
+            print >>sys.stderr, "WARNING: {0}:{1} is out of genic region.".format(self.id,pos)
+        return -2
+    def transcript_position(self,pos,verbose=False):
+        '''
+        Get zero-based transcript position given zero-based genomic position.        
+        '''
+        if not self.stop>pos>=self.start:
+            if verbose:
+                print >>sys.stderr, "WARNING: {0}:{1} is not in genic region.".format(self.id,pos)
+            return -1, "intergenic"
+        l = 0
+        for i,exon in enumerate(self.exons()):
+            el = len(exon)
+            if exon.start<= pos < exon.stop:
+                return l + pos - exon.start if exon.strand == "+" else l + exon.stop - pos, "exon_{0}".format(i+1)
+                break
+            if (self.strand == "+" and pos<exon.start) or (self.strand == '-' and pos>=exon.stop):
+                if verbose:
+                    print >>sys.stderr, "WARNING: {0}:{1} is in intron.".format(self.id,pos)
+                return l,"intron_{0}".format(i+1)
+            l += el
     def truncate(self,start,stop):
         ''' truncate gene to [start,stop) '''
         tgene = copy.deepcopy(self)        
@@ -732,10 +804,7 @@ class GeneBed(Bed):
         return cds
     def getcDNALength(self):
         '''Return cdna length.'''
-        l=0
-        for exon in self.exons():
-            l+=exon.length()
-        return l
+        return sum([len(exon) for exon in self.exons()])
     def fetchDB(self,db,forcestrand=True):
         '''
         Fetch elements from DB.
@@ -1885,19 +1954,21 @@ class TabixFile(object):
         Fetch items in Tabix file. 
         Allow to use converter to convert the result.
         '''
-        # check converter
-        converter = kwargs.get('converter')
-        if isinstance(converter, basestring) or converter is None:
-            if IO.converters.has_key(converter):
-                converter = IO.converters[converter]
-            elif ":" in converter:
-                converter = lambda x:IO.anyToBed(x,converter)
-            else:
-                raise ValueError("ERROR: converter '{0}' is not valid. It should be either preset types or callable function.".format(converter))
-        # fetch items
-        if not zerobased: start -= 1
-        for item in self.fh.fetch(reference=chrom,start=start,end=stop):
-            yield converter(item)
+        # check if in contigs
+        if chrom is None or chrom in self.fh.contigs:
+            # check converter
+            converter = kwargs.get('converter')
+            if isinstance(converter, basestring) or converter is None:
+                if IO.converters.has_key(converter):
+                    converter = IO.converters[converter]
+                elif ":" in converter:
+                    converter = lambda x:IO.anyToBed(x,converter)
+                else:
+                    raise ValueError("ERROR: converter '{0}' is not valid. It should be either preset types or callable function.".format(converter))
+            # fetch items
+            if not zerobased: start -= 1
+            for item in self.fh.fetch(reference=chrom,start=start,end=stop):
+                yield converter(item)
     def pileup(self,chrom=None,start=None,stop=None,strand="+",zerobased=True,**kwargs):
         ''' Pileup items in a given region. '''
         byscore = kwargs.get('byscore',False)
@@ -1913,6 +1984,7 @@ class TabixFile(object):
         # pileup beds
         if not zerobased: start -= 1
         depth = numpy.zeros(stop-start)
+
         if byscore:
             for item in self.fh.fetch(reference=chrom,start=start,end=stop):
                 tbed = converter(item)
@@ -1955,28 +2027,43 @@ class BAMFile(pysam.Samfile):
             elif strand == "-" and read.is_reverse is True:
                 yield read
     def pileup(self,chrom=None,start=None,stop=None,strand=".",zerobased=True, **kwargs):
-        ''' Pileup region in BAM file. '''
+        ''' 
+        Pileup region in BAM file. 
+        NOTE: Adapted from http://yanshouyu.blog.163.com/blog/static/2142831822014097304158
+              Avoid coverage at junction region.
+        '''
+        forcestrand = kwargs.get('forcestrand',False) # by default, not forcestrand
+        if strand == ".":
+            forcestrand = False
         if start is not None and not zerobased: start -= 1
         depth = numpy.zeros(stop-start)
-        if strand == ".":
-            for pc in super(BAMFile,self).pileup(reference=chrom,start=start,end=stop,**kwargs):
-                if start <= pc.pos < stop:
-                    depth[pc.pos-start] += pc.n
+        l = len(depth)
+        if not forcestrand:
+            for read in super(BAMFile,self).fetch(reference=chrom,start=start,end=stop):
+                if not read.is_secondary:
+                    rstart = read.pos - start
+                    for mtype,mlen in read.cigar:
+                        if mtype==0: # match
+                            # check overlap
+                            sstart = max(0,rstart)
+                            sstop  = min(l,rstart+mlen)
+                            if sstart < sstop:
+                                depth[sstart:sstop] += 1
+                        elif mtype==1: # insertion
+                            rstart -= mlen
+                        rstart+=mlen
             return depth
+        # forcestrand
+        checkstrand = strand == '-'
         for read in super(BAMFile,self).fetch(reference=chrom,start=start,end=stop):
-            if read.is_reverse and strand =="-":
+            if not read.is_secondary and read.is_reverse == checkstrand: # ((read.is_reverse and strand =="-") or not (read.is_reverse or strand == '-')):
                 rstart = read.pos - start
                 for mtype,mlen in read.cigar:
                     if mtype==0: # match
-                        depth[rstart:rstart+mlen] += 1
-                    elif mtype==1: # insertion
-                        rstart -= mlen
-                    rstart+=mlen
-            elif not read.is_reverse and strand == '+':
-                rstart = read.pos - start
-                for mtype,mlen in read.cigar:
-                    if mtype==0: # match
-                        depth[rstart:rstart+mlen] += 1
+                        sstart = max(0,rstart)
+                        sstop  = min(l,rstart+mlen)
+                        if sstart < sstop:
+                            depth[sstart:sstop] += 1
                     elif mtype==1: # insertion
                         rstart -= mlen
                     rstart+=mlen
@@ -2105,6 +2192,8 @@ class mFile(object):
         elif isinstance(infile,StringFile):
             self.fh = infile.fh
         elif infile.endswith('gz'):
+            if 'b' not in mode:
+                mode += 'b'
             self.fh = gzip.open(infile, mode)
         else:
             self.fh = open(infile, mode)
@@ -2138,6 +2227,9 @@ class mFile(object):
     def write(self,lstr):
         ''' write to file. '''
         self.fh.write(lstr)
+    def flush(self):
+        ''' flush '''
+        self.fh.flush()
     def __enter__(self):
         ''' On enter. '''
         return self
@@ -2675,14 +2767,13 @@ class Utils(object):
         ''' Convert RNA sequences t oDNA sequences. '''
         return seq.upper().replace('U','T')
     toDNA=staticmethod(toDNA)
-    def toProtein(seq,table):
+    def toProtein(seq,table=None):
         '''Translate DNA or RNA to protein according to standard translation table.'''
+        if table is None:
+            table=Utils.translateTables()
         seq=seq.upper().rstrip()
         if "U" in seq:
             seq=Utils.toDNA(seq)
-        if len(seq)%3!=0:
-            print >>sys.stderr, "Sequcence length should be 3*N."
-            return None
         p=""
         for i in xrange(len(seq)/3):
             p+=table[seq[i*3:(i+1)*3]]
@@ -2780,6 +2871,13 @@ class Utils(object):
         return REs.getdefault(re,'')
     RESequence=staticmethod(RESite)
     
+    def fullpath(cmd):
+        ''' Find full path of command. '''
+        for path in os.environ['PATH'].split(':'):
+            if os.path.isfile(path+'/'+cmd):
+                return path+'/'+cmd
+        raise ValueError("ERROR: {0} cannot be found in system PATH.".format(cmd))
+    fullpath=staticmethod(fullpath)
     def cmd_exists(cmd):
         ''' Test if commond exists. '''
         return call("type " + cmd, shell=True,  stdout=PIPE, stderr=PIPE) == 0
@@ -2863,14 +2961,13 @@ class Pipeline(object):
         if not Pipeline.Path.has_key('aspera'):
             raise OSError('ERROR: aspera path is not provided!')
         aspera = Pipeline.Path['aspera']
-        putty = aspera[:aspera.find('/bin')] + "/etc/asperaweb_id_dsa.putty"
+        putty = aspera[:aspera.find('/bin')] + "/etc/asperaweb_id_dsa.openssh"
 
         sys.stderr.write('Starting apsera ...\n')             
         cmd = " ".join([aspera,'-i', putty, '-k1', '-QTr', '-l200m', 'anonftp@ftp-private.ncbi.nlm.nih.gov:'+link, outputdir])
         
         sys.stderr.write("Running command: {0}\n".format(cmd))
-        p = Popen( cmd.split(), stdin=None,stdout=None,stderr=sys.stderr)
-        p.communicate()
+        call(cmd,shell=True)
     aspera=staticmethod(aspera)
     def fastq_dump(srafile, prefix= None, paired = False, overwrite=False,clean=False):
         '''
@@ -2938,6 +3035,70 @@ class Pipeline(object):
             os.remove(srafile)
             sys.stderr.write("Clean SRA file: {0}\n".format(srafile))
     fastq_dump=staticmethod(fastq_dump)
+    def bowtie_all(genome, prefix, sorting=True, paras="-m 1 -v 2 -p 6",overwrite=False):
+        '''
+        Bowtie aligner.
+        Parameters:
+            genome: string
+                Bowtie(2) built index prefix
+            prefix: string
+                fastq file prefix. Fastq files are prefix.fq for single end, prefix_1.fq and prefix_2.fq for paired-end
+        Shell example:
+            bowtie ~/Data/mm9/mm9 -m 1 -v 2 -p 6 -S input.fastq output.sam
+        Usage:
+            Pipeline.bowtie_all("~/Data/mm9/mm9","test")
+        '''
+        # identify bowtie version from genome index
+        if os.path.isfile(genome+".1.ebwt"):
+            aligner = 'bowtie'
+        elif  os.path.isfile(genome+".1.bt2"):
+            alinger = 'bowtie2'
+        else:
+            raise ValueError("ERROR: Aligner: {0} is not recognised.".format(aligner))
+        aligner = Utils.fullpath(aligner)
+        samtools = Utils.fullpath("samtools")
+        # paired reads or not
+        if os.path.isfile(prefix+".fastq"):
+            paired = False
+            fqfile = os.path.abspath(prefix+".fastq")
+        elif os.path.isfile(prefix+"_1.fastq") and os.path.isfile(prefix+"_2.fastq"):
+            paired = True
+            fqfile  = os.path.abspath(prefix+"_1.fastq")
+            fqfile2 = os.path.abspath(prefix+"_2.fastq")
+        else:
+            raise ValueError("ERROR: Cannot determine paired end or not. Make sure your fastq file is in format: prefix.fastq or se and prefix_1/2.fastq for pe.")
+        # check if samfile exists
+        samfile = prefix+".bam"
+        if os.path.isfile(samfile):
+            if overwrite:
+                os.remove(samfile)
+            else:
+                sys.stderr.write("Skipped: output file: {0} exists.\n".format(samfile))
+                return 
+        # To be continued
+        sys.stderr.write("Starting bowtie ...\n")
+        if paired:
+            if aligner == "bowtie":
+                cmd = "{aligner} {genome} {paras} -1 {fqfile} -2 {fqfile2} 2>{samprefix}.log".format(aligner=aligner,paras=paras,genome=genome,fqfile=fqfile,fqfile2=fqfile2,samprefix=samfile[:-4])
+            else:
+                cmd = "{aligner} {paras} -x {genome} -1 {fqfile} -2 {fqfile2} 2>{samprefix}.log".format(aligner=aligner,paras=paras,genome=genome,fqfile=fqfile,fqfile2=fqfile2,samprefix=samfile[:-4])
+        else:
+            if aligner == "bowtie":
+                cmd = "{aligner} {genome} {paras} {fqfile} 2>{samprefix}.log".format(aligner=aligner,paras=paras,genome=genome,fqfile=fqfile,samprefix=samfile[:-4])
+            else:
+                cmd = "{aligner} {paras} -x {genome} -U {fqfile} 2>{samprefix}.log".format(aligner=aligner,paras=paras,genome=genome,fqfile=fqfile,samprefix=samfile[:-4])
+        if sorting:
+            cmd += "|{samtools} view -Sb - >{samfile} ".format(samtools=samtools,samfile=samfile)
+            sys.stderr.write("Running command: {0}\n".format(cmd))
+            call(cmd,shell=True)
+        else:
+            cmd += "|{samtools} view -Sb - |{samtools} sort - {samprefix}".format(samtools=samtools,samprefix=samfile[:-4])
+            sys.stderr.write("Running command: {0}\n".format(cmd))
+            call(cmd,shell=True)
+            cmd = "{samtools} index {samfile}".format(samtools=samtools,samfile=samfile)
+            sys.stderr.write("Running command: {0}\n".format(cmd))
+            call(cmd,shell=True)
+    bowtie_all=staticmethod(bowtie_all)
     def bowtie(genome, fqfile,fqfile2=None, samfile=None, paras="-m 1 -v 2 -p 6",overwrite=False):
         ''' 
         Bowtie aligner.
@@ -3097,7 +3258,8 @@ class Pipeline(object):
         if not Utils.cmd_exists('macs14'):
             raise ValueError('ERROR: macs14 cannot be found.')
         treatment = os.path.expanduser(treatment)
-        control = os.path.expanduser(control)
+        if control:
+            control = os.path.expanduser(control)
         
         # check if output file exists
         if os.path.isfile(prefix+"_peaks.bed"):
@@ -3108,7 +3270,10 @@ class Pipeline(object):
                 return
 
         logfile = os.path.splitext(treatment)[0]+"_macs14.log"
-        cmd = 'macs14 -t {0} -c {1}  -n {2} {3}'.format(treatment,control, prefix, paras)
+        if control:
+            cmd = 'macs14 -t {0} -c {1}  -n {2} {3}'.format(treatment,control, prefix, paras)
+        else:
+            cmd = 'macs14 -t {0} -n {1} {2}'.format(treatment, prefix, paras)
         
         # run MACS
         sys.stderr.write("Running command: {0}\n".format(cmd))
@@ -3140,7 +3305,8 @@ class Pipeline(object):
             raise ValueError('ERROR: macs2 cannot be found.')
 
         treatment = os.path.expanduser(treatment)
-        control = os.path.expanduser(control)
+        if control:
+            control = os.path.expanduser(control)
         
         # check if output file exists
         if os.path.isfile(prefix+"_peaks.bed"):
@@ -3151,7 +3317,10 @@ class Pipeline(object):
                 return
         
         logfile = os.path.splitext(treatment)[0]+".log"
-        cmd = 'macs2 callpeak -t {0} -c {1} -n {2} {3}'.format(treatment,control,prefix,paras)
+        if control:
+            cmd = 'macs2 callpeak -t {0} -c {1} -n {2} {3}'.format(treatment,control,prefix,paras)
+        else:
+            cmd = 'macs2 callpeak -t {0} -n {1} {2}'.format(treatment,prefix,paras)
         
         # run MACS
         sys.stderr.write("Running command: {0}\n".format(cmd))
@@ -3173,6 +3342,8 @@ class Pipeline(object):
         '''
         Covert bam file to bigwig file.
         '''
+        if isinstance(paras,list):
+            paras = ' '.join(paras)
         sys.stderr.write("Starting bam to bigwig conversion ...\n")
         # check if output file exists
         if not overwrite:
@@ -3192,14 +3363,20 @@ class Pipeline(object):
         for i in range(len(treatment)):
             treatment[i] = os.path.expanduser(treatment[i])
             Utils.mustexist(treatment[i])
-        Control = os.path.expanduser(Control)
+        if Control:
+            Control = os.path.expanduser(Control)
         gsize = os.path.expanduser(gsize)
-        Utils.mustexist(Control)
+        if Control:
+            Utils.mustexist(Control)
         Utils.mustexist(gsize)
         
         # run wBamToWig.py
-        logfile = os.path.splitext(os.path.basename(Control))[0]+"_bam2wig.log"
-        cmd = 'wBamToWig.py -t {0} -c {1} {2}'.format(" ".join(treatment),Control,paras)
+        if Control:
+            logfile = os.path.splitext(os.path.basename(Control))[0]+"_bam2wig.log"
+            cmd = 'wSamToWig.py -t {0} -c {1} {2}'.format(" ".join(treatment),Control,paras)
+        else:
+            logfile = "None_bam2wig.log"
+            cmd = 'wSamToWig.py -t {0} {1}'.format(" ".join(treatment),paras)
         sys.stderr.write('Running command: {0}\n'.format(cmd))
         p = Popen(cmd.split(),stdin=None,stdout=PIPE,stderr=PIPE)
         pstdout, pstderr = p.communicate()
@@ -3296,8 +3473,9 @@ class Pipeline(object):
         gsize       = paras.get('gsize','~/Data/mm9/mm9.sizes') # for bam2wig
         paired      = eval(paras.get('paired','False'))
         aligner     = paras.get('aligner',['bowtie','-m 1 -v 2 -p 6'])
-        bamtowig     = paras.get('bam2wig','-n 10 -e 200')
+        bamtowig    = paras.get('bam2wig','-n 10 -e 200')
         peakcalling = paras.get('peakcalling',['macs14','-f BAM -g mm'])
+        Control     = eval(Control) if Control == "None" else Control
 
         # check if sra link, download files if true
         threads = []
@@ -3349,8 +3527,9 @@ class Pipeline(object):
         # run macs and wBamTowig.py
         threads = []
         treatment = samples.keys()
-        treatment.remove(Control)
-        t = threading.Thread(target = Pipeline.bam2wig, args=([p+".bam" for p in treatment],Control+".bam", gsize, bamtowig))
+        if Control:
+            treatment.remove(Control)
+        t = threading.Thread(target = Pipeline.bam2wig, args=([p+".bam" for p in treatment],"{0}.bam".format(Control) if Control else None, gsize, bamtowig))
         t.start()
         threads.append(t)
         if peakcalling[0] == 'macs14':
@@ -3360,7 +3539,7 @@ class Pipeline(object):
         else:
             raise ValueError("ERROR: Peakcalling software {0} cannot be found.".format(peakcalling[0]))
         for p in treatment:
-            t = threading.Thread(target = target, args=(p+".bam",Control+".bam",p,peakcalling[1]))
+            t = threading.Thread(target = target, args=(p+".bam","{0}.bam".format(Control) if Control else None,p,peakcalling[1]))
             t.start()
             threads.append(t)
         for t in threads:
@@ -3409,13 +3588,12 @@ class Pipeline(object):
         paras = {'genome':'~/Data/mm9/mm9','gsize':'~/Data/mm9/mm9.sizes', 'paired':'False','aligner':['bowtie','-m 1 -v 2 -p 6'],'peakcalling':['macs14','-f BAM -g mm'],'bam2wig':'-n 10 -e 200'}
 
         # read samples
-        for i,line in enumerate(IO.BioReader(cfgfile)):
+        for i,line in enumerate(IO.BioReader(cfgfile,sep=None)):
             if line[0].startswith('@'): # software and parameters
-                print line
                 if len(line) == 2:
                     paras[line[0].lstrip('@')] = line[1]
                 else:
-                    paras[line[0].lstrip('@')] = line[1:] 
+                    paras[line[0].lstrip('@')] = [line[1],' '.join(line[2:])]
             elif len(line) == 2: # Control
                 samples[line[1]] = line[0]
             elif len(line) > 2: # treatment
@@ -3426,11 +3604,14 @@ class Pipeline(object):
             else:
                 if len(line)>0:
                     raise ValueError("ERROR: Cannot parse config file {0} at line:\n '{1}'.".format(cfgfile,i),"\t".join(line))
-
         # run pipeline for each pairs
+        print paras
         threads = []
+        print pairs
         for Control in pairs:
-            subsamples = {Control:samples[Control]}
+            subsamples = {}
+            if Control != "None":
+                subsamples[Control] = samples[Control]
             for p in pairs[Control]:
                 subsamples[p] = samples[p]
             t = threading.Thread(target = Pipeline.ChIP_thread, args=(subsamples,Control,paras)) 

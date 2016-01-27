@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#Last-modified: 26 Jun 2015 04:49:52 PM
+#Last-modified: 16 Nov 2015 02:49:13 PM
 
 #         Module/Scripts Description
 # 
@@ -19,8 +19,8 @@
 # ------------------------------------
 
 import sys
+import matplotlib
 from pylab import *
-import numpy
 import itertools 
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -587,8 +587,8 @@ class Utils(object):
     def get_cmap(N):
         '''Returns a function that maps each index in 0, 1, ... N-1 to a distinct 
         RGB color.'''
-        color_norm  = colors.Normalize(vmin=0, vmax=N-1)
-        scalar_map = cmx.ScalarMappable(norm=color_norm, cmap='hsv') 
+        color_norm  = matplotlib.colors.Normalize(vmin=0, vmax=N-1)
+        scalar_map = matplotlib.cm.ScalarMappable(norm=color_norm, cmap='hsv') 
         def map_index_to_rgb_color(index):
             return scalar_map.to_rgba(index)
         return map_index_to_rgb_color

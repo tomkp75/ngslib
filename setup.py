@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#Last-modified: 09 Apr 2015 01:50:54 PM
+#Last-modified: 02 Oct 2015 02:42:07 PM
 
 #         Module/Scripts Description
 # 
@@ -46,8 +46,8 @@ if __name__ == '__main__':
     with open("README.rst",'r') as fh:
         long_description = fh.read()
     # ngslib version
-    with open('VERSION','r') as fh:
-        PROG, VERSION = fh.read().split()
+    with open('RELEASE','r') as fh:
+        PROG, VERSION = fh.next().split()[:2]
 
     # Compile Kent lib
     if 'clean' in sys.argv:

@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#Last-modified: 18 Mar 2014 03:56:12 PM
+#Last-modified: 13 Nov 2015 01:49:15 PM
 
 """ Module/Scripts Description
 
@@ -31,7 +31,7 @@ import string,xlrd
 # ------------------------------------
 
 def basename(filename):
-    return os.path.basename(filename).split('.')[0]
+    return os.path.splitext(os.path.basename(filename))[0]
 
 # ------------------------------------
 # Classes
