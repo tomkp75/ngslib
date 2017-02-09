@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#Last-modified: 16 Nov 2015 11:39:34 AM
+#Last-modified: 03 Nov 2016 02:30:54 PM
 
 #         Module/Scripts Description
 # 
@@ -102,6 +102,7 @@ _binNextShift  = 3;       # How much to shift to get to next larger bin.
 ##############################################################################################
 # commonly used genome sizes
 ##############################################################################################
+
 genome={}
 genome['K12']={"K12":4639675}
 genome['CFT073']={'CFT073':5231428}
@@ -109,7 +110,9 @@ genome['ce6']={'chrI':15072421,'chrII':15279323,'chrIII':13783681,'chrIV':174937
 genome['sc']={'chr01':230218,'chr02':813184,'chr03':316620,'chr04':1531933,'chr05':576874,'chr06':270161,'chr07':1090940,'chr08':562643,'chr09':439888,'chr10':745751,'chr11':666816,'chr12':1078177,'chr13':924431,'chr14':784333,'chr15':1091291,'chr16':948066,'chrM':85779}
 genome['hg19']={'chr1':249250621,'chr2':243199373,'chr3':198022430,'chr4':191154276,'chr5':180915260,'chr6':171115067,'chr7':159138663,'chr8':146364022,'chr9':141213431,'chr10':135534747,'chr11':135006516,'chr12':133851895,'chr13':115169878,'chr14':107349540,'chr15':102531392,'chr16':90354753,'chr17':81195210,'chr18':78077248,'chr20':63025520,'chr19':59128983,'chr22':51304566,'chr21':48129895,'chrX':155270560,'chrY':59373566,'chrM':16571}
 genome['mm10']={'chrY': 91744698, 'chrX': 171031299, 'chr13': 120421639, 'chr12': 120129022, 'chr11': 122082543, 'chr10': 130694993, 'chr17': 94987271, 'chr16': 98207768, 'chr15': 104043685, 'chr14': 124902244, 'chr19': 61431566, 'chr18': 90702639, 'chrM': 16299, 'chr7': 145441459, 'chr6': 149736546, 'chr5': 151834684, 'chr4': 156508116, 'chr3': 160039680, 'chr2': 182113224, 'chr1': 195471971, 'chr9': 124595110, 'chr8': 129401213}
-genome['mm9']={'chrY': '15902555', 'chrX': '166650296', 'chr13': '120284312', 'chr12': '121257530', 'chr11': '121843856', 'chr10': '129993255', 'chr17': '95272651', 'chr16': '98319150', 'chr15': '103494974', 'chr14': '125194864', 'chr19': '61342430', 'chr18': '90772031', 'chrM': '16299', 'chr7': '152524553', 'chr6': '149517037', 'chr5': '152537259', 'chr4': '155630120', 'chr3': '159599783', 'chr2': '181748087', 'chr1': '197195432', 'chr9': '124076172', 'chr8': '131738871'}
+genome['mm9']={'chrY': 15902555, 'chrX': 166650296, 'chr13': 120284312, 'chr12': 121257530, 'chr11': 121843856, 'chr10': 129993255, 'chr17': 95272651, 'chr16': 98319150, 'chr15': 103494974, 'chr14': 125194864, 'chr19': 61342430, 'chr18': 90772031, 'chrM': 16299, 'chr7': 152524553, 'chr6': 149517037, 'chr5': 152537259, 'chr4': 155630120, 'chr3': 159599783, 'chr2': 181748087, 'chr1': 197195432, 'chr9': 124076172, 'chr8': 131738871}
+genome['hg38']={"chr1":248956422 ,"chr2":242193529 ,"chr3":198295559 ,"chr4":190214555 ,"chr5":181538259 ,"chr6":170805979 ,"chr7":159345973 ,"chr8":145138636 ,"chr9":138394717 ,"chr10":133797422 ,"chr11":135086622 ,"chr12":133275309 ,"chr13":114364328 ,"chr14":107043718 ,"chr15":101991189 ,"chr16":90338345 ,"chr17":83257441 ,"chr18":80373285 ,"chr19":58617616 ,"chr20":64444167 ,"chr21":46709983 ,"chr22":50818468 ,"chrX":156040895 ,"chrY":57227415 ,"chrM":16569 }
+
 ##############################################################################################
 
 # ------------------------------------
@@ -189,7 +192,7 @@ class Bed3(object):
             > if tbed3 != None: print tbed3
             chr1\t100\t250
         '''
-        if B is None:
+        if not B:
             return copy.deepcopy(self)
         if isinstance(B,basestring):
             return str(self)+"\t"+B
@@ -201,28 +204,54 @@ class Bed3(object):
         raise TypeError("ERROR: object type is not accepted for adding.")
     def __sub__(self,B):
         '''
-        Subtract B from current Bed. Return a list of Beds.
+        Operator -. Subtract B from current Bed. Return a list of Beds.
+        Parameters:
+            B: Bed3 or subclass instance, or None
+        Returns:
+            left: the same class as self, or None
+                left part remains
+            right: the same class as self, or None
+                right part remains
         '''
-        if B is None:
-            return [copy.deepcopy(self)]
         if issubclass(type(B),Bed3):
             tbed = copy.deepcopy(self)
             if not tbed.isOverlap(B):
-                return [copy.deepcopy(self)]
+                if tbed < B:
+                    return tbed,None
+                else:
+                    return None,tbed
             # find overlap
-            sub_start = max(self.start,B.start)
-            sub_stop  = min(self.stop,B.stop)
-            beds = []
-            if sub_start > self.start:
-                tbed = copy.deepcopy(self)
-                tbed.stop = sub_start
-                beds.append(tbed)
-            if sub_stop < self.stop:
-                tbed = copy.deepcopy(self)
-                tbed.start = sub_stop
-                beds.append(tbed)
-            return beds
-        raise TypeError("ERROR: object type is not accepted for subtracting.")
+            if B.start > self.start:
+                left = copy.deepcopy(self)
+                left.stop = B.start
+            else:
+                left = None
+            if B.stop < self.stop:
+                right = copy.deepcopy(self)
+                right.start = B.stop
+            return left,right
+        if B is None:
+            return copy.deepcopy(self),None
+        raise TypeError("ERROR: object types don't match for subtraction.")
+    def __or__(self,B):
+        ''' Operator | '''
+        return self.__add__(B)
+    def __and__(self,B):
+        '''
+        Operator &
+        Parameters:
+            B: Bed3 or subclass instance
+        Returns:
+            tbed: the same class as self, or None
+                if overlap, return the intersection interval
+                Otherwise, return None
+        '''
+        if issubclass(type(B),Bed3) and self.overlapLength(B)>=0:
+            tbed = copy.deepcopy(self)
+            self.start = max(self.start,B.start)
+            self.stop  = min(self.stop,B.stop)
+            return tbed
+        return None
     def __eq__(self,B):
         ''' Compare if two Beds have the same chrom, start and stop. '''
         return self.chrom == B.chrom and self.start == B.start and self.stop == B.stop    
@@ -619,7 +648,7 @@ class GeneBed(Bed):
     def toBed12(self):
         '''Convert to Bed12 format.'''
         template = '\t'.join(["{{{0}}}".format(i) for i in range(12)])
-        return template.format(self.chrom,self.start,self.stop,self.id,self.score,self.strand,0,0,0,self.exoncount,','.join([str(stop-start) for start,stop in zip(self.exonstarts,self.exonstops)]),",".join([str(i-self.start) for i in self.exonstarts]))
+        return template.format(self.chrom,self.start,self.stop,self.id,self.score,self.strand,self.txstart,self.txstop,0,self.exoncount,','.join([str(stop-start) for start,stop in zip(self.exonstarts,self.exonstops)]),",".join([str(i-self.start) for i in self.exonstarts]))
     def getTSS(self):
         ''' Get TSS as a Bed object. '''
         tbed = self.toBed().getTSS()
@@ -1286,7 +1315,7 @@ class BedList(list):
                 else:
                     break
     mergeSort=staticmethod(mergeSort)
-    def mergeBeds(bedfiles,ftype = 'bed3', forcestrand=False): #generator
+    def mergeBeds(bedfiles,ftype = 'bed', forcestrand=False): #generator
         '''Merge Beds from multiple files. The overlapped beds are combined. The Bed in each file should be sorted.'''
         if forcestrand:
             beds = {".":None, "+":None, "-":None}
@@ -1326,12 +1355,12 @@ class BedList(list):
         if not self.sorted:
             self.sort()
         nbeds = BedList()
-        nbed = self[0]
+        nbed = copy.deecopy(self[0])
         for tbed in self[1:]:
             if nbed.overlapLength(tbed) >=0:
                 nbed += tbed
             else:
-                nbeds.append(nbed)
+                nbeds.append(copy.deepcopy(tbed))
                 nbed = tbed
         nbeds.append(nbed)
         return nbeds
@@ -2892,10 +2921,23 @@ class Utils(object):
         for f in fs:
             Utils.mustexist(f)
     mustexistall=staticmethod(mustexistall)
+    def naturalkeys(text):
+        '''
+        nlist = sorted(old_list,key=natural_keys) #sorts in human order
+        http://nedbatchelder.com/blog/200712/human_sorting.html
+        (See Toothy's implementation in the comments)
+        '''
+        def atoi(text):
+            return int(text) if text.isdigit() else text
+        return [ atoi(c) for c in re.split('(\d+)', text) ]
+    naturalkeys=staticmethod(naturalkeys)
     def using(point=""):
         usage=resource.getrusage(resource.RUSAGE_SELF)
         return '''%s: usertime=%s systime=%s mem=%s mb'''%(point,usage[0],usage[1],(usage[2]*resource.getpagesize())/1000000.0 )
     using=staticmethod(using)
+    def touchtime(lstr,ofh=sys.stderr):
+        ofh.write("# {0}: {1}\n".format(time.ctime(),lstr))
+    touchtime=staticmethod(touchtime)
 
 #########################################################################
 # Software: Commonly used software for NGS data analysis
@@ -3099,7 +3141,7 @@ class Pipeline(object):
             sys.stderr.write("Running command: {0}\n".format(cmd))
             call(cmd,shell=True)
     bowtie_all=staticmethod(bowtie_all)
-    def bowtie(genome, fqfile,fqfile2=None, samfile=None, paras="-m 1 -v 2 -p 6",overwrite=False):
+    def bowtie(genome, fqfile,fqfile2=None, samfile=None, paras="-m 1 -v 2 -p 6 -S",overwrite=False):
         ''' 
         Bowtie aligner.
         Shell example:
@@ -3135,9 +3177,9 @@ class Pipeline(object):
         
         # run bowtie
         if fqfile2:
-            cmd = "bowtie {0} {1} -1 {2} -2 {3} -S {4}".format(genome, paras, fqfile, fqfile2, samfile)
+            cmd = "bowtie {0} {1} -1 {2} -2 {3} {4}".format(genome, paras, fqfile, fqfile2, samfile)
         else:
-            cmd = "bowtie {0} {1} {2} -S {3}".format(genome, paras, fqfile,samfile)
+            cmd = "bowtie {0} {1} {2} {3}".format(genome, paras, fqfile,samfile)
         sys.stderr.write("Running command: {0}\n".format(cmd))
         p = Popen(cmd.split(), stdin=None, stdout=PIPE, stderr=PIPE)
         pstdout, pstderr = p.communicate()
@@ -3201,6 +3243,65 @@ class Pipeline(object):
         with open(logfile,'w') as ofh:
             print >> ofh, pstderr
     bowtie2=staticmethod(bowtie2)
+    def hisat2(genome,fq1,fq2=None, bamfile=None, paras="-p 10",splicesitefile="",strandness="NS",overwrite=False):    
+        '''
+        Hisat2 reads aligner.
+        Parameters:
+            strandness: string
+                choices from NS, FR and RF.
+        '''
+        Utils.touchtime("HiSat2 parameter checking...")
+        # parameter check
+        if not Utils.cmd_exists('hisat2'):
+            raise ValueError('ERROR: hisat2 cannot be found.')
+        genome = os.path.expanduser(genome)
+        Utils.mustexist(genome+".8.ht2")
+        fq1 = os.path.expanduser(fq1)
+        if fq2:
+            fq2 = os.path.expanduser(fq2)
+        if bamfile is None:
+            bamfile = os.path.splitext(os.path.basename(fq1))[0]+".bam"
+        prefix = os.path.splitext(bamfile)[0]
+        if splicesitefile:
+            splicesitefile = "--known-splicesite-infile "+os.path.expanduser(splicesitefile)
+        else:
+            splicesitefile = ""
+        # generate cmd
+        if fq2 is None:
+            cmd = "hisat2 -x {genome} {para} {strand} {ss}-U {fq1} |samtools view -Sb -|samtools sort -@ 5 - {prefix} 2>{prefix}_hisat2.log;samtools index {prefix}.bam".format(genome=genome,fq1=fq1,para=paras,ss=splicesitefile,strand="--rna-strandness {0}".format(strandness) if strandness != "NS" else "",prefix=prefix)
+        else:
+            cmd = "hisat2 -x {genome} {para} {strand} {ss} -1 {fq1} -2 {fq2} |samtools view -Sb -|samtools sort -@ 5 - {prefix} 2>{prefix}_hisat2.log; samtools index {prefix}.bam".format(genome=genome,fq1=fq1,fq2=fq2,para=paras,ss=splicesitefile,strand="--rna-strandness {0}".format(strandness) if strandness != "NS" else "",prefix=prefix)
+        # run hisat2
+        Utils.touchtime("Running Hisat2 ...")
+        Utils.touchtime(cmd)
+        rc = call(cmd,shell=True)
+        if rc:
+            exit("HiSat2 interrupted with error code: {0}".format(rc))
+        Utils.touchtime("HiSat2 successfully finished.")
+    hisat2=staticmethod(hisat2)
+    def stringtie(bamfile,gtf, outprefix,ballgowndir=".",p=10):
+        '''
+        '''
+        Utils.touchtime("Checking parameters ...")
+        Utils.cmd_exists('stringtie')
+        bg = '-B' if ballgowndir == '.' else '-b '+os.path.expanduser(ballgowndir)
+        bamfile = os.path.expanduser(bamfile)
+        Utils.mustexist(bamfile)
+        gtf = os.path.expanduser(gtf)
+        Utils.mustexist(gtf)
+        cmd = "stringtie {bamfile} -G {gtf} -p {p} -e {bg} -A {prefix}.fpkm -o {prefix}.gtf".format(bamfile=bamfile,prefix=outprefix,bg=bg,p=p,gtf=gtf)
+        # run stringtie
+        Utils.touchtime("Runing stringtie ... ")
+        p = Popen(cmd.split(), stdin=None, stdout=PIPE, stderr=PIPE)
+        pstdout, pstderr = p.communicate()
+        rc = p.returncode
+
+        # Writing log file
+        logfile = os.path.splitext(bamfile)[0]+"_stringtie.log"
+        Utils.touchtime("Writing log information into {0}.".format(logfile))
+        with open(logfile,'w') as ofh:
+            ofh.write(pstderr)
+    stringtie=staticmethod(stringtie)
     def bam_index(samfile,bamfile= None,overwrite=False):
         '''
         convert samfile to indexed bamfile.
