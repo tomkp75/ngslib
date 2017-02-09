@@ -1,8 +1,12 @@
 =================
-Python-fontconfig
+ngslib
 =================
 
-Python bindings for ngslib_ library
+ngslib current release: ngslib 1.1.19
+
+Wiki page moved to GitHub_.
+
+.. _GitHub: https://github.com/tsznxx/ngslib/wiki  
 
 Requirement
 -----------
@@ -19,7 +23,7 @@ Requirement
 
 
 Tested on
-~~~~~~~~
+----------------
 
 - ``Python 2.6.*`` (64-bit)
 - ``Python 2.7.*`` (64-bit)
